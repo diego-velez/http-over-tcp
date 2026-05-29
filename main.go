@@ -5,7 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
+	"log"
+	"net"
 )
 
 func getLinesChannel(f io.ReadCloser) <-chan string {
@@ -25,12 +26,12 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 				if bytes.ContainsRune(data, '\n') {
 					lines := bytes.Split(data, []byte{'\n'})
 					if len(lines) != 2 {
-						panic("expected only one \\n")
+						log.Fatal("expected only one \\n")
 					}
 
 					_, err := line.Write(lines[0])
 					if err != nil {
-						panic(err)
+						log.Fatal(err)
 					}
 
 					out <- line.String()
@@ -39,12 +40,12 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 
 					_, err = line.Write(lines[1])
 					if err != nil {
-						panic(err)
+						log.Fatal(err)
 					}
 				} else {
 					_, err := line.Write(data)
 					if err != nil {
-						panic(err)
+						log.Fatal(err)
 					}
 				}
 			}
@@ -53,7 +54,7 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				panic(err)
+				log.Fatal(err)
 			}
 		}
 	}()
@@ -62,13 +63,23 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 }
 
 func main() {
-	f, err := os.Open("messages.txt")
+	listener, err := net.Listen("tcp", "127.0.0.1:42069")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
+	defer listener.Close() // nolint: errcheck
 
-	lines := getLinesChannel(f)
-	for line := range lines {
-		fmt.Printf("read: %s\n", line)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Println("New connection accepted!")
+
+		lines := getLinesChannel(conn)
+		for line := range lines {
+			fmt.Printf("read: %s\n", line)
+		}
 	}
 }

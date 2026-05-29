@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -24,7 +25,13 @@ func (h Headers) Get(key string) string {
 }
 
 func (h Headers) Set(key, value string) {
-	h[strings.ToLower(key)] = value
+	key = strings.ToLower(key)
+
+	if v, ok := h[key]; ok {
+		value = fmt.Sprintf("%s, %s", v, value)
+	}
+
+	h[key] = value
 }
 
 func (h Headers) Parse(data []byte) (int, bool, error) {

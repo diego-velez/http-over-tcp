@@ -14,8 +14,8 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
-	assert.Equal(t, "barbar", headers["FooFoo"])
+	assert.Equal(t, "localhost:42069", headers.Get("HOST"))
+	assert.Equal(t, "barbar", headers.Get("FooFoo"))
 	assert.Equal(t, 39, n)
 	assert.False(t, done)
 
@@ -25,10 +25,19 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
-	assert.Equal(t, "barbar", headers["FooFoo"])
+	assert.Equal(t, "localhost:42069", headers.Get("HOST"))
+	assert.Equal(t, "barbar", headers.Get("FooFoo"))
 	assert.Equal(t, 39, n)
 	assert.True(t, done)
+
+	// Test: Invalid char in field key
+	headers = NewHeaders()
+	data = []byte("h©st: localhost:42069\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.ErrorIs(t, err, ErrInvalidFieldKey)
+	require.NotNil(t, headers)
+	assert.Equal(t, 0, n)
+	assert.False(t, done)
 
 	// Test: Invalid spacing header
 	headers = NewHeaders()

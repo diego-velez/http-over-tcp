@@ -3,14 +3,28 @@ package headers
 import (
 	"bytes"
 	"errors"
+	"regexp"
+	"strings"
 )
 
-var ErrInvalidField = errors.New("invalid header field")
+var (
+	ErrInvalidField    = errors.New("invalid header field")
+	ErrInvalidFieldKey = errors.New("invalid field key")
+	validToken         = regexp.MustCompile(`^[a-zA-Z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
+)
 
 type Headers map[string]string
 
 func NewHeaders() Headers {
 	return make(Headers)
+}
+
+func (h Headers) Get(key string) string {
+	return h[strings.ToLower(key)]
+}
+
+func (h Headers) Set(key, value string) {
+	h[strings.ToLower(key)] = value
 }
 
 func (h Headers) Parse(data []byte) (int, bool, error) {
@@ -34,10 +48,14 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 			return parsed, false, err
 		}
 
+		if !validToken.MatchString(key) {
+			return parsed, false, ErrInvalidFieldKey
+		}
+
 		// We add 2 because of '\r\n'
 		parsed += len(field) + 2
 
-		h[key] = value
+		h.Set(key, value)
 	}
 
 	return parsed, false, nil

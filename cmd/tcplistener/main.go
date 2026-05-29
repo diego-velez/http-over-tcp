@@ -25,22 +25,21 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 				data := buf[:n]
 				if bytes.ContainsRune(data, '\n') {
 					lines := bytes.Split(data, []byte{'\n'})
-					if len(lines) != 2 {
-						log.Fatal("expected only one \\n")
-					}
 
-					_, err := line.Write(lines[0])
-					if err != nil {
-						log.Fatal(err)
-					}
+					for i, l := range lines {
+						_, err := line.Write(l)
+						if err != nil {
+							log.Fatal(err)
+						}
 
-					out <- line.String()
+						// The last segment is not a complete line probs
+						if i == len(lines)-1 {
+							break
+						}
 
-					line.Reset()
+						out <- line.String()
 
-					_, err = line.Write(lines[1])
-					if err != nil {
-						log.Fatal(err)
+						line.Reset()
 					}
 				} else {
 					_, err := line.Write(data)

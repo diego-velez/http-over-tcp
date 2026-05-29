@@ -5,12 +5,69 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"strings"
+)
+
+var ErrBadRequestLine = errors.New("invalid request line")
+
+type RequestState int
+
+const (
+	StateStartLine RequestState = iota
+	StateHeader
+	StateBody
+	StateDone
 )
 
 type Request struct {
 	RequestLine RequestLine
+
+	buf   bytes.Buffer
+	state RequestState
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	if r.state == StateDone {
+		return 0, nil
+	}
+
+	_, err := r.buf.Write(data)
+	if err != nil {
+		return 0, err
+	}
+
+	bufBytes := r.buf.Bytes()
+	parsed := 0
+	if bytes.Contains(bufBytes, []byte("\r\n")) {
+		// Account for the 2 bytes of '\r\n'
+		parsed += 2
+
+		lines := bytes.Split(bufBytes, []byte("\r\n"))
+		for i, l := range lines {
+			// We assume that the last line is incomplete so we do not parse it
+			if i == len(lines)-1 {
+				// We only want to keep in the buffer unparsed bytes
+				r.buf.Reset()
+				_, err := r.buf.Write(l)
+				if err != nil {
+					return 0, err
+				}
+				break
+			}
+
+			parsed += len(l)
+
+			if r.state == StateStartLine {
+				r.state = StateDone
+				requestLine, _, err := parseRequestLine(l)
+				if err != nil {
+					return parsed, err
+				}
+				r.RequestLine = requestLine
+			}
+		}
+	}
+
+	return parsed, nil
 }
 
 type RequestLine struct {
@@ -19,96 +76,53 @@ type RequestLine struct {
 	Method        string
 }
 
-var ErrBadRequestLine = errors.New("invalid request line")
-
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	r := &Request{}
-	parsedRequestLine := false
 
-	lines := getLinesChannel(reader)
-	for l := range lines {
-		if !parsedRequestLine {
-			parsedRequestLine = true
-			requestLine, err := parseRequestLine(l)
+	for r.state != StateDone {
+		buf := make([]byte, 8)
+		n, err := reader.Read(buf)
+
+		if n > 0 {
+			_, err := r.parse(buf[:n])
 			if err != nil {
-				return nil, fmt.Errorf("%w: %w", ErrBadRequestLine, err)
+				return nil, err
 			}
-			r.RequestLine = requestLine
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
 		}
 	}
 
 	return r, nil
 }
 
-func parseRequestLine(line string) (RequestLine, error) {
-	requestLineSplit := strings.Split(line, " ")
+func parseRequestLine(line []byte) (RequestLine, int, error) {
+	requestLineSplit := bytes.Split(line, []byte{' '})
 	if len(requestLineSplit) != 3 {
-		return RequestLine{}, fmt.Errorf("expected 3 content for the request line, but got %d", len(requestLineSplit))
+		return RequestLine{}, 0, fmt.Errorf("expected 3 content for the request line, but got %d", len(requestLineSplit))
 	}
 
 	protocolVersion := requestLineSplit[2]
-	protocolVersionSplit := strings.Split(protocolVersion, "/")
+	protocolVersionSplit := bytes.Split(protocolVersion, []byte{'/'})
 	if len(protocolVersionSplit) != 2 {
-		return RequestLine{}, fmt.Errorf("invalid protocol version")
+		return RequestLine{}, 0, fmt.Errorf("invalid protocol version")
 	}
 
 	return RequestLine{
-		Method:        requestLineSplit[0],
-		RequestTarget: requestLineSplit[1],
-		HttpVersion:   protocolVersionSplit[1]}, nil
+		Method:        string(requestLineSplit[0]),
+		RequestTarget: string(requestLineSplit[1]),
+		HttpVersion:   string(protocolVersionSplit[1])}, len(line), nil
 }
 
-func getLinesChannel(f io.Reader) <-chan string {
-	out := make(chan string, 1)
-
-	go func() {
-		defer close(out)
-
-		var line bytes.Buffer
-		buf := make([]byte, 8)
-		for {
-			n, err := f.Read(buf)
-
-			if n > 0 {
-				data := buf[:n]
-				if bytes.ContainsRune(data, '\n') {
-					lines := bytes.Split(data, []byte{'\r', '\n'})
-
-					for i, l := range lines {
-						_, err := line.Write(l)
-						if err != nil {
-							log.Fatal(err)
-						}
-
-						// The last segment is not a complete line probs
-						if i == len(lines)-1 {
-							// This should detect \r\n dividing the header and the body
-							if len(l) == 0 {
-								return
-							}
-							break
-						}
-
-						out <- line.String()
-
-						line.Reset()
-					}
-				} else {
-					_, err := line.Write(data)
-					if err != nil {
-						log.Fatal(err)
-					}
-				}
-			}
-
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				log.Fatal(err)
-			}
-		}
-	}()
-
-	return out
+func bytesToString(bytes [][]byte) []string {
+	result := make([]string, 0, len(bytes))
+	for _, b := range bytes {
+		result = append(result, string(b))
+	}
+	return result
 }

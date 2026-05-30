@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+
+	"github.com/diego-velez/http-from-scratch-course/internal/headers"
 )
 
 var ErrBadRequestLine = errors.New("invalid request line")
@@ -20,9 +23,14 @@ const (
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 
 	buf   bytes.Buffer
 	state RequestState
+}
+
+func NewRequest() *Request {
+	return &Request{Headers: headers.NewHeaders(), state: StateStartLine}
 }
 
 func (r *Request) parse(data []byte) (int, error) {
@@ -36,34 +44,49 @@ func (r *Request) parse(data []byte) (int, error) {
 	}
 
 	bufBytes := r.buf.Bytes()
-	parsed := 0
-	if bytes.Contains(bufBytes, []byte("\r\n")) {
-		// Account for the 2 bytes of '\r\n'
-		parsed += 2
+	if !bytes.Contains(bufBytes, []byte("\r\n")) {
+		return 0, nil
+	}
 
-		lines := bytes.Split(bufBytes, []byte("\r\n"))
-		for i, l := range lines {
-			// We assume that the last line is incomplete so we do not parse it
-			if i == len(lines)-1 {
-				// We only want to keep in the buffer unparsed bytes
-				r.buf.Reset()
-				_, err := r.buf.Write(l)
-				if err != nil {
-					return 0, err
-				}
-				break
+	// Account for the 2 bytes of '\r\n'
+	parsed := 2
+	lines := bytes.Split(bufBytes, []byte("\r\n"))
+	for i, l := range lines {
+		// We assume that the last line is incomplete so we do not parse it
+		if i == len(lines)-1 {
+			// We only want to keep in the buffer unparsed bytes
+			r.buf.Reset()
+			_, err := r.buf.Write(l)
+			if err != nil {
+				return 0, err
 			}
+			break
+		}
 
-			parsed += len(l)
+		if r.state == StateDone {
+			break
+		}
 
-			if r.state == StateStartLine {
+		switch r.state {
+		case StateStartLine:
+			r.state = StateHeader
+			requestLine, n, err := parseRequestLine(l)
+			parsed += n
+			if err != nil {
+				return parsed, err
+			}
+			r.RequestLine = requestLine
+		case StateHeader:
+			n, done, err := r.Headers.Parse(l)
+			parsed += n
+			if err != nil {
+				return parsed, err
+			}
+			if done {
 				r.state = StateDone
-				requestLine, _, err := parseRequestLine(l)
-				if err != nil {
-					return parsed, err
-				}
-				r.RequestLine = requestLine
 			}
+		default:
+			log.Fatal("unknown parser state")
 		}
 	}
 
@@ -77,7 +100,7 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	r := &Request{}
+	r := NewRequest()
 
 	for r.state != StateDone {
 		buf := make([]byte, 8)

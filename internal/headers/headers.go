@@ -35,8 +35,23 @@ func (h Headers) Set(key, value string) {
 }
 
 func (h Headers) Parse(data []byte) (int, bool, error) {
+	if len(data) == 0 {
+		return 0, true, nil
+	}
+
 	if !bytes.Contains(data, []byte("\r\n")) {
-		return 0, false, nil
+		key, value, err := parseHeader(data)
+		if err != nil {
+			return 0, false, err
+		}
+
+		if !validToken.MatchString(key) {
+			return 0, false, ErrInvalidFieldKey
+		}
+
+		h.Set(key, value)
+
+		return len(data), false, nil
 	}
 
 	parsed := 0

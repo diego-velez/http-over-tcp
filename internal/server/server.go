@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/diego-velez/http-from-scratch-course/internal/request"
+	"github.com/diego-velez/http-from-scratch-course/internal/response"
 )
 
 type Server struct {
@@ -65,7 +66,8 @@ func (s *Server) handle(conn net.Conn) {
 	fmt.Println("Body:")
 	fmt.Printf("%s\n", string(r.Body))
 
-	out := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!\n")
-	_, _ = conn.Write(out)
+	_ = response.WriteStatusLine(conn, response.StatusOK)
+	headers := response.GetDefaultHeaders(0)
+	_ = response.WriteHeaders(conn, headers)
 	_ = conn.Close()
 }

@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
+	"github.com/diego-velez/http-from-scratch-course/internal/headers"
 	"github.com/diego-velez/http-from-scratch-course/internal/request"
 	"github.com/diego-velez/http-from-scratch-course/internal/response"
 	"github.com/diego-velez/http-from-scratch-course/internal/server"
@@ -55,6 +57,21 @@ func handleConn(w *response.Writer, req *request.Request) {
 			}
 		}
 
+		return
+	}
+
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/video") {
+		f, err := os.ReadFile("assets/vim.mp4")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		w.WriteStatusLine(response.StatusOK)
+		h := headers.NewHeaders()
+		h.Set("Content-Type", "video/mp4")
+		h.Set("Content-Length", strconv.Itoa(len(f)))
+		w.WriteHeaders(h)
+		w.WriteBody(f)
 		return
 	}
 

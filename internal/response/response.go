@@ -9,6 +9,24 @@ import (
 	"github.com/diego-velez/http-from-scratch-course/internal/headers"
 )
 
+type Writer struct {
+	Buf bytes.Buffer
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	return WriteStatusLine(&w.Buf, statusCode)
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	return WriteHeaders(&w.Buf, headers)
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	_, _ = w.Buf.Write([]byte("\r\n"))
+	_, _ = w.Buf.Write(p)
+	return 0, nil
+}
+
 type StatusCode int
 
 const (

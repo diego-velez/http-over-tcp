@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
 
@@ -11,7 +9,7 @@ import (
 	"github.com/diego-velez/http-from-scratch-course/internal/response"
 )
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type HandlerError struct {
 	Code response.StatusCode
@@ -31,7 +29,7 @@ func Serve(port int, handler Handler) (*Server, error) {
 	}
 
 	s := &Server{listener: listener, handler: handler, closed: false}
-	s.listen()
+	go s.listen()
 	return s, nil
 }
 
@@ -42,19 +40,18 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) listen() {
-	go func() {
-		for {
-			conn, err := s.listener.Accept()
-			if err != nil {
-				log.Fatal(err)
-			}
-			if s.closed {
-				return
-			}
-
-			go s.handle(conn)
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			log.Printf("Error accepting connection: %v", err)
+			continue
 		}
-	}()
+		if s.closed {
+			return
+		}
+
+		go s.handle(conn)
+	}
 }
 
 func (s *Server) handle(conn net.Conn) {
@@ -81,18 +78,8 @@ func (s *Server) handle(conn net.Conn) {
 	fmt.Println("Body:")
 	fmt.Printf("%s\n", string(r.Body))
 
-	var buf bytes.Buffer
-	buf.Write([]byte("\r\n"))
-	handlerErr := s.handler(&buf, r)
-	if handlerErr != nil {
-		_ = response.WriteStatusLine(conn, handlerErr.Code)
-		_, _ = buf.Write([]byte(handlerErr.Msg))
-	} else {
-		_ = response.WriteStatusLine(conn, response.StatusOK)
-	}
+	var w response.Writer
+	s.handler(&w, r)
 
-	headers := response.GetDefaultHeaders(len(buf.Bytes()) - 2)
-	_ = response.WriteHeaders(conn, headers)
-
-	_, _ = conn.Write(buf.Bytes())
+	_, _ = conn.Write(w.Buf.Bytes())
 }

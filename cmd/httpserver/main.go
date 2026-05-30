@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -28,15 +27,15 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
-func handleConn(w io.Writer, req *request.Request) *server.HandlerError {
+func handleConn(w *response.Writer, req *request.Request) {
 	switch req.RequestLine.RequestTarget {
 	case "/yourproblem":
-		return &server.HandlerError{Code: response.StatusBadRequest, Msg: "Your problem is not my problem\n"}
+		w.WriteStatusLine(response.StatusBadRequest)
+		w.WriteBody([]byte("Your problem is not my problem\n"))
 	case "/myproblem":
-		return &server.HandlerError{Code: response.StatusInternalServerError, Msg: "Woopsie, my bad\n"}
+		w.WriteStatusLine(response.StatusInternalServerError)
+		w.WriteBody([]byte("Woopsie, my bad\n"))
 	default:
-		_, _ = w.Write([]byte("All good, frfr\n"))
+		w.WriteBody([]byte("All good, frfr\n"))
 	}
-
-	return nil
 }

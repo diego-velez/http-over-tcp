@@ -104,7 +104,16 @@ func (r *Request) parse(data []byte) (int, error) {
 				if r.Headers.Get("content-length") == "" {
 					r.state = StateDone
 				} else {
-					r.state = StateBody
+					contentLength, err := strconv.Atoi(r.Headers.Get("content-length"))
+					if err != nil {
+						return len(l), fmt.Errorf("content-length header is not a number")
+					}
+
+					if contentLength <= 0 {
+						r.state = StateDone
+					} else {
+						r.state = StateBody
+					}
 				}
 			}
 		case StateBody:

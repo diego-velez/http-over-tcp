@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 
 	"github.com/diego-velez/http-from-scratch-course/internal/headers"
 )
@@ -24,6 +25,7 @@ const (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 
 	buf   bytes.Buffer
 	state RequestState
@@ -36,6 +38,19 @@ func NewRequest() *Request {
 func (r *Request) parse(data []byte) (int, error) {
 	if r.state == StateDone {
 		return 0, nil
+	}
+
+	// We want to use raw body
+	if r.state == StateBody {
+		r.Body = append(r.Body, data...)
+		contentLength, err := strconv.Atoi(r.Headers.Get("content-length"))
+		if err != nil {
+			return len(data), fmt.Errorf("content-length header is not a number")
+		}
+		if len(r.Body) >= contentLength {
+			r.state = StateDone
+		}
+		return len(data), nil
 	}
 
 	_, err := r.buf.Write(data)
@@ -52,8 +67,9 @@ func (r *Request) parse(data []byte) (int, error) {
 	parsed := 2
 	lines := bytes.Split(bufBytes, []byte("\r\n"))
 	for i, l := range lines {
-		// We assume that the last line is incomplete so we do not parse it
-		if i == len(lines)-1 {
+		// If we are not parser the request body yet, then we assume that the last line
+		// is incomplete so we do not parse it
+		if r.state != StateBody && i == len(lines)-1 {
 			// We only want to keep in the buffer unparsed bytes
 			r.buf.Reset()
 			_, err := r.buf.Write(l)
@@ -83,6 +99,21 @@ func (r *Request) parse(data []byte) (int, error) {
 				return parsed, err
 			}
 			if done {
+				r.buf.Reset()
+				// We assume that there is no body if no 'content-length' header
+				if r.Headers.Get("content-length") == "" {
+					r.state = StateDone
+				} else {
+					r.state = StateBody
+				}
+			}
+		case StateBody:
+			r.Body = append(r.Body, l...)
+			contentLength, err := strconv.Atoi(r.Headers.Get("content-length"))
+			if err != nil {
+				return len(l), fmt.Errorf("content-length header is not a number")
+			}
+			if len(r.Body) >= contentLength {
 				r.state = StateDone
 			}
 		default:
@@ -115,6 +146,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if r.state == StateBody {
+					contentLength, _ := strconv.Atoi(r.Headers.Get("content-length"))
+					if len(r.Body) < contentLength {
+						return nil, fmt.Errorf("body shorter than content-length: got %d, expected %d", len(r.Body), contentLength)
+					}
+				}
 				break
 			}
 			return nil, err

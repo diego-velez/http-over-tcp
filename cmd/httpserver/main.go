@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/diego-velez/http-from-scratch-course/internal/request"
@@ -28,6 +32,32 @@ func main() {
 }
 
 func handleConn(w *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
+		length := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
+		r, err := http.Get("https://httpbin.org/" + length)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		buf := make([]byte, 32)
+		for {
+			n, err := r.Body.Read(buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				log.Fatal(err)
+			}
+
+			_, err = w.WriteChunkedBody(buf[:n])
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		return
+	}
+
 	switch req.RequestLine.RequestTarget {
 	case "/yourproblem":
 		w.WriteStatusLine(response.StatusBadRequest)

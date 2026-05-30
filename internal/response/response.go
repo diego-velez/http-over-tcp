@@ -2,6 +2,7 @@ package response
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -18,13 +19,22 @@ func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 }
 
 func (w *Writer) WriteHeaders(headers headers.Headers) error {
-	return WriteHeaders(&w.Buf, headers)
+	err1 := WriteHeaders(&w.Buf, headers)
+	_, err2 := w.Buf.Write([]byte("\r\n"))
+	return errors.Join(err1, err2)
 }
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
-	_, _ = w.Buf.Write([]byte("\r\n"))
-	_, _ = w.Buf.Write(p)
-	return 0, nil
+	n, err := w.Buf.Write(p)
+	return n, err
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	n1, err1 := w.Buf.Write([]byte(strconv.Itoa(len(p))))
+	n2, err2 := w.Buf.Write([]byte("\r\n"))
+	n3, err3 := w.Buf.Write(p)
+	n4, err4 := w.Buf.Write([]byte("\r\n"))
+	return n1 + n2 + n3 + n4, errors.Join(err1, err2, err3, err4)
 }
 
 type StatusCode int
